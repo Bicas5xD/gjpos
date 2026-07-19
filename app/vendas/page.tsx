@@ -1,31 +1,129 @@
 "use client";
 
-import { useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useState,
+} from "react";
 import Sidebar from "@/components/Sidebar";
-import { products } from "@/lib/products";
 import { supabase } from "@/lib/supabase";
 
-type Product = (typeof products)[number];
+type Product = {
+  id: number;
+  name: string;
+  price: number;
+  stock: number;
+  category: string | null;
+  active: boolean;
+};
 
 type CartItem = Product & {
   quantity: number;
 };
 
+function getProductEmoji(product: Product) {
+  const name = product.name.toLowerCase();
+
+  if (name.includes("café")) return "☕";
+  if (name.includes("água")) return "💧";
+  if (name.includes("coca")) return "🥤";
+  if (name.includes("iced tea")) return "🧃";
+  if (name.includes("caipir")) return "🍹";
+
+  if (
+    product.category?.toLowerCase().includes("bebida")
+  ) {
+    return "🥤";
+  }
+
+  return "🛒";
+}
+
 export default function Vendas() {
+  const [products, setProducts] = useState<Product[]>(
+    []
+  );
   const [cart, setCart] = useState<CartItem[]>([]);
-  const [amountReceived, setAmountReceived] = useState("");
+  const [amountReceived, setAmountReceived] =
+    useState("");
+  const [isLoadingProducts, setIsLoadingProducts] =
+    useState(true);
+  const [productsError, setProductsError] =
+    useState("");
   const [isSaving, setIsSaving] = useState(false);
 
+  const loadProducts = useCallback(async () => {
+    setIsLoadingProducts(true);
+    setProductsError("");
+
+    const { data, error } = await supabase
+      .from("products")
+      .select(
+        "id, name, price, stock, category, active"
+      )
+      .eq("active", true)
+      .order("name", { ascending: true });
+
+    if (error) {
+      console.error(
+        "Erro ao carregar os produtos:",
+        error
+      );
+
+      setProductsError(
+        "Não foi possível carregar os produtos."
+      );
+      setIsLoadingProducts(false);
+      return;
+    }
+
+    const formattedProducts: Product[] = (
+      data ?? []
+    ).map((product) => ({
+      id: Number(product.id),
+      name: product.name,
+      price: Number(product.price),
+      stock: Number(product.stock),
+      category: product.category,
+      active: product.active,
+    }));
+
+    setProducts(formattedProducts);
+    setIsLoadingProducts(false);
+  }, []);
+
+  useEffect(() => {
+    void loadProducts();
+  }, [loadProducts]);
+
+  function getQuantityInCart(productId: number) {
+    return (
+      cart.find((item) => item.id === productId)
+        ?.quantity ?? 0
+    );
+  }
+
   function addToCart(product: Product) {
+    if (product.stock <= 0) {
+      return;
+    }
+
     setCart((currentCart) => {
       const existingItem = currentCart.find(
         (item) => item.id === product.id
       );
 
       if (existingItem) {
+        if (existingItem.quantity >= product.stock) {
+          return currentCart;
+        }
+
         return currentCart.map((item) =>
           item.id === product.id
-            ? { ...item, quantity: item.quantity + 1 }
+            ? {
+                ...item,
+                quantity: item.quantity + 1,
+              }
             : item
         );
       }
@@ -42,11 +140,20 @@ export default function Vendas() {
 
   function increaseQuantity(productId: number) {
     setCart((currentCart) =>
-      currentCart.map((item) =>
-        item.id === productId
-          ? { ...item, quantity: item.quantity + 1 }
-          : item
-      )
+      currentCart.map((item) => {
+        if (item.id !== productId) {
+          return item;
+        }
+
+        if (item.quantity >= item.stock) {
+          return item;
+        }
+
+        return {
+          ...item,
+          quantity: item.quantity + 1,
+        };
+      })
     );
   }
 
@@ -55,7 +162,10 @@ export default function Vendas() {
       currentCart
         .map((item) =>
           item.id === productId
-            ? { ...item, quantity: item.quantity - 1 }
+            ? {
+                ...item,
+                quantity: item.quantity - 1,
+              }
             : item
         )
         .filter((item) => item.quantity > 0)
@@ -63,7 +173,8 @@ export default function Vendas() {
   }
 
   const total = cart.reduce(
-    (sum, item) => sum + item.price * item.quantity,
+    (sum, item) =>
+      sum + item.price * item.quantity,
     0
   );
 
@@ -87,6 +198,17 @@ export default function Vendas() {
       return;
     }
 
+    const invalidStockItem = cart.find(
+      (item) => item.quantity > item.stock
+    );
+
+    if (invalidStockItem) {
+      alert(
+        `Não existe stock suficiente de ${invalidStockItem.name}.`
+      );
+      return;
+    }
+
     const confirmed = window.confirm(
       `Confirmar venda de ${total.toFixed(
         2
@@ -104,7 +226,7 @@ export default function Vendas() {
         await supabase
           .from("sales")
           .insert({
-            total: total,
+            total,
             amount_received: received,
             change_amount: change,
             payment_method: "cash",
@@ -139,14 +261,31 @@ export default function Vendas() {
         throw itemsError;
       }
 
+      for (const item of cart) {
+        const newStock = item.stock - item.quantity;
+
+        const { error: stockError } = await supabase
+          .from("products")
+          .update({
+            stock: newStock,
+          })
+          .eq("id", item.id);
+
+        if (stockError) {
+          throw stockError;
+        }
+      }
+
+      setCart([]);
+      setAmountReceived("");
+
+      await loadProducts();
+
       alert(
         `Venda guardada com sucesso!\nTroco: ${change.toFixed(
           2
         )} €`
       );
-
-      setCart([]);
-      setAmountReceived("");
     } catch (error) {
       console.error(
         "Erro ao guardar a venda:",
@@ -154,7 +293,7 @@ export default function Vendas() {
       );
 
       alert(
-        "Não foi possível guardar a venda. Verifica o Console para veres o erro."
+        "Não foi possível guardar a venda. Abre o Console para veres o erro."
       );
     } finally {
       setIsSaving(false);
@@ -177,29 +316,73 @@ export default function Vendas() {
               Produtos
             </h2>
 
-            <div className="grid grid-cols-2 gap-4">
-              {products.map((product) => (
+            {isLoadingProducts ? (
+              <p className="text-gray-400">
+                A carregar produtos...
+              </p>
+            ) : productsError ? (
+              <div>
+                <p className="text-red-400">
+                  {productsError}
+                </p>
+
                 <button
-                  key={`product-${product.id}`}
                   type="button"
-                  onClick={() => addToCart(product)}
-                  disabled={isSaving}
-                  className="rounded-xl bg-orange-500 p-6 text-xl font-bold transition hover:bg-orange-600 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
+                  onClick={() => void loadProducts()}
+                  className="mt-4 rounded-lg bg-orange-500 px-4 py-2 font-bold hover:bg-orange-600"
                 >
-                  <span className="block text-3xl">
-                    {product.emoji}
-                  </span>
-
-                  <span className="mt-2 block">
-                    {product.name}
-                  </span>
-
-                  <span className="mt-1 block text-base">
-                    {product.price.toFixed(2)} €
-                  </span>
+                  Tentar novamente
                 </button>
-              ))}
-            </div>
+              </div>
+            ) : products.length === 0 ? (
+              <p className="text-gray-400">
+                Não existem produtos ativos.
+              </p>
+            ) : (
+              <div className="grid grid-cols-2 gap-4">
+                {products.map((product) => {
+                  const quantityInCart =
+                    getQuantityInCart(product.id);
+
+                  const hasAvailableStock =
+                    product.stock > 0 &&
+                    quantityInCart < product.stock;
+
+                  return (
+                    <button
+                      key={`product-${product.id}`}
+                      type="button"
+                      onClick={() =>
+                        addToCart(product)
+                      }
+                      disabled={
+                        isSaving ||
+                        !hasAvailableStock
+                      }
+                      className="rounded-xl bg-orange-500 p-6 text-xl font-bold transition hover:bg-orange-600 active:scale-95 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:opacity-60"
+                    >
+                      <span className="block text-3xl">
+                        {getProductEmoji(product)}
+                      </span>
+
+                      <span className="mt-2 block">
+                        {product.name}
+                      </span>
+
+                      <span className="mt-1 block text-base">
+                        {product.price.toFixed(2)} €
+                      </span>
+
+                      <span className="mt-2 block text-sm">
+                        {product.stock <= 0
+                          ? "Sem stock"
+                          : `Stock: ${product.stock}`}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* Carrinho */}
@@ -221,11 +404,16 @@ export default function Vendas() {
                   >
                     <div>
                       <p className="font-semibold">
-                        {item.emoji} {item.name}
+                        {getProductEmoji(item)}{" "}
+                        {item.name}
                       </p>
 
                       <p className="text-sm text-gray-400">
                         {item.price.toFixed(2)} € cada
+                      </p>
+
+                      <p className="text-xs text-gray-500">
+                        Stock disponível: {item.stock}
                       </p>
                     </div>
 
@@ -250,7 +438,10 @@ export default function Vendas() {
                         onClick={() =>
                           increaseQuantity(item.id)
                         }
-                        disabled={isSaving}
+                        disabled={
+                          isSaving ||
+                          item.quantity >= item.stock
+                        }
                         className="h-10 w-10 rounded-lg bg-green-600 text-xl font-bold hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         +
@@ -287,9 +478,7 @@ export default function Vendas() {
                 step="0.01"
                 value={amountReceived}
                 onChange={(event) =>
-                  setAmountReceived(
-                    event.target.value
-                  )
+                  setAmountReceived(event.target.value)
                 }
                 placeholder="0,00 €"
                 disabled={
