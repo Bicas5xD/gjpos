@@ -1,8 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import {
   useCallback,
   useEffect,
+  useMemo,
   useState,
 } from "react";
 import Sidebar from "@/components/Sidebar";
@@ -21,36 +23,206 @@ type CartItem = Product & {
   quantity: number;
 };
 
+const categoryOrder = [
+  "Bebidas",
+  "Bar",
+  "Comida",
+  "Snacks",
+  "Sobremesas",
+  "Menu",
+  "Café",
+];
+
 function getProductEmoji(product: Product) {
   const name = product.name.toLowerCase();
+  const category = product.category?.toLowerCase() ?? "";
 
-  if (name.includes("café")) return "☕";
-  if (name.includes("água")) return "💧";
-  if (name.includes("coca")) return "🥤";
-  if (name.includes("iced tea")) return "🧃";
-  if (name.includes("caipir")) return "🍹";
+  if (name.includes("café") || name.includes("cafe")) {
+    return "☕";
+  }
+
+  if (name.includes("água") || name.includes("agua")) {
+    return "💧";
+  }
+
+  if (name.includes("coca")) {
+    return "🥤";
+  }
 
   if (
-    product.category?.toLowerCase().includes("bebida")
+    name.includes("ice tea") ||
+    name.includes("iced tea")
   ) {
+    return "🧃";
+  }
+
+  if (name.includes("cerveja")) {
+    return "🍺";
+  }
+
+  if (name.includes("caipir")) {
+    return "🍹";
+  }
+
+  if (name.includes("shot")) {
+    return "🥃";
+  }
+
+  if (
+    name.includes("gelado") ||
+    name.includes("sobremesa")
+  ) {
+    return "🍨";
+  }
+
+  if (
+    name.includes("cachorro") ||
+    name.includes("hot dog")
+  ) {
+    return "🌭";
+  }
+
+  if (
+    name.includes("hambúrguer") ||
+    name.includes("hamburguer")
+  ) {
+    return "🍔";
+  }
+
+  if (name.includes("batata")) {
+    return "🍟";
+  }
+
+  if (name.includes("menu")) {
+    return "📋";
+  }
+
+  if (category === "bebidas") {
     return "🥤";
+  }
+
+  if (category === "bar") {
+    return "🍹";
+  }
+
+  if (category === "comida") {
+    return "🍔";
+  }
+
+  if (category === "snacks") {
+    return "🍟";
+  }
+
+  if (category === "sobremesas") {
+    return "🍨";
+  }
+
+  if (category === "menu") {
+    return "📋";
+  }
+
+  if (
+    category === "café" ||
+    category === "cafe"
+  ) {
+    return "☕";
   }
 
   return "🛒";
 }
 
+function getCategoryEmoji(category: string) {
+  switch (category) {
+    case "Todos":
+      return "📦";
+
+    case "Bebidas":
+      return "🥤";
+
+    case "Bar":
+      return "🍹";
+
+    case "Comida":
+      return "🍔";
+
+    case "Snacks":
+      return "🍟";
+
+    case "Sobremesas":
+      return "🍨";
+
+    case "Menu":
+      return "📋";
+
+    case "Café":
+      return "☕";
+
+    case "Sem categoria":
+      return "❓";
+
+    default:
+      return "🛒";
+  }
+}
+
 export default function Vendas() {
-  const [products, setProducts] = useState<Product[]>(
-    []
-  );
+  const [products, setProducts] = useState<Product[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [amountReceived, setAmountReceived] =
     useState("");
+
+  const [selectedCategory, setSelectedCategory] =
+    useState("Todos");
+
+  const [cashSessionId, setCashSessionId] = useState<
+    number | null
+  >(null);
+
+  const [isLoadingCash, setIsLoadingCash] =
+    useState(true);
+
+  const [cashError, setCashError] = useState("");
+
   const [isLoadingProducts, setIsLoadingProducts] =
     useState(true);
+
   const [productsError, setProductsError] =
     useState("");
+
   const [isSaving, setIsSaving] = useState(false);
+
+  const loadCashSession = useCallback(async () => {
+    setIsLoadingCash(true);
+    setCashError("");
+
+    const { data, error } = await supabase
+      .from("cash_sessions")
+      .select("id")
+      .eq("status", "open")
+      .maybeSingle();
+
+    if (error) {
+      console.error(
+        "Erro ao verificar a caixa:",
+        error
+      );
+
+      setCashSessionId(null);
+
+      setCashError(
+        "Não foi possível verificar o estado da caixa."
+      );
+
+      setIsLoadingCash(false);
+      return;
+    }
+
+    setCashSessionId(
+      data ? Number(data.id) : null
+    );
+
+    setIsLoadingCash(false);
+  }, []);
 
   const loadProducts = useCallback(async () => {
     setIsLoadingProducts(true);
@@ -73,6 +245,7 @@ export default function Vendas() {
       setProductsError(
         "Não foi possível carregar os produtos."
       );
+
       setIsLoadingProducts(false);
       return;
     }
@@ -85,7 +258,7 @@ export default function Vendas() {
       price: Number(product.price),
       stock: Number(product.stock),
       category: product.category,
-      active: product.active,
+      active: Boolean(product.active),
     }));
 
     setProducts(formattedProducts);
@@ -93,8 +266,72 @@ export default function Vendas() {
   }, []);
 
   useEffect(() => {
+    void loadCashSession();
     void loadProducts();
-  }, [loadProducts]);
+  }, [loadCashSession, loadProducts]);
+
+  const isCashOpen = cashSessionId !== null;
+
+  const categories = useMemo(() => {
+    const existingCategories = Array.from(
+      new Set(
+        products.map(
+          (product) =>
+            product.category?.trim() ||
+            "Sem categoria"
+        )
+      )
+    );
+
+    existingCategories.sort(
+      (categoryA, categoryB) => {
+        const indexA =
+          categoryOrder.indexOf(categoryA);
+
+        const indexB =
+          categoryOrder.indexOf(categoryB);
+
+        if (indexA !== -1 && indexB !== -1) {
+          return indexA - indexB;
+        }
+
+        if (indexA !== -1) {
+          return -1;
+        }
+
+        if (indexB !== -1) {
+          return 1;
+        }
+
+        return categoryA.localeCompare(
+          categoryB,
+          "pt"
+        );
+      }
+    );
+
+    return ["Todos", ...existingCategories];
+  }, [products]);
+
+  const filteredProducts = useMemo(() => {
+    if (selectedCategory === "Todos") {
+      return products;
+    }
+
+    return products.filter((product) => {
+      const productCategory =
+        product.category?.trim() ||
+        "Sem categoria";
+
+      return productCategory === selectedCategory;
+    });
+  }, [products, selectedCategory]);
+
+  useEffect(() => {
+    if (!categories.includes(selectedCategory)) {
+      setSelectedCategory("Todos");
+    }
+  }, [categories, selectedCategory]);
 
   function getQuantityInCart(productId: number) {
     return (
@@ -104,7 +341,11 @@ export default function Vendas() {
   }
 
   function addToCart(product: Product) {
-    if (product.stock <= 0) {
+    if (
+      !isCashOpen ||
+      isSaving ||
+      product.stock <= 0
+    ) {
       return;
     }
 
@@ -114,7 +355,9 @@ export default function Vendas() {
       );
 
       if (existingItem) {
-        if (existingItem.quantity >= product.stock) {
+        if (
+          existingItem.quantity >= product.stock
+        ) {
           return currentCart;
         }
 
@@ -139,6 +382,10 @@ export default function Vendas() {
   }
 
   function increaseQuantity(productId: number) {
+    if (!isCashOpen || isSaving) {
+      return;
+    }
+
     setCart((currentCart) =>
       currentCart.map((item) => {
         if (item.id !== productId) {
@@ -158,6 +405,10 @@ export default function Vendas() {
   }
 
   function decreaseQuantity(productId: number) {
+    if (!isCashOpen || isSaving) {
+      return;
+    }
+
     setCart((currentCart) =>
       currentCart
         .map((item) =>
@@ -171,6 +422,28 @@ export default function Vendas() {
         .filter((item) => item.quantity > 0)
     );
   }
+
+  function clearCart() {
+    if (cart.length === 0 || isSaving) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Queres remover todos os produtos do carrinho?"
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setCart([]);
+    setAmountReceived("");
+  }
+
+  const totalItems = cart.reduce(
+    (sum, item) => sum + item.quantity,
+    0
+  );
 
   const total = cart.reduce(
     (sum, item) =>
@@ -187,7 +460,11 @@ export default function Vendas() {
     cart.length > 0 && received >= total;
 
   async function finalizeSale() {
-    if (cart.length === 0 || isSaving) {
+    if (
+      cart.length === 0 ||
+      isSaving ||
+      !isCashOpen
+    ) {
       return;
     }
 
@@ -222,6 +499,33 @@ export default function Vendas() {
     setIsSaving(true);
 
     try {
+      const {
+        data: currentSession,
+        error: sessionError,
+      } = await supabase
+        .from("cash_sessions")
+        .select("id")
+        .eq("status", "open")
+        .maybeSingle();
+
+      if (sessionError) {
+        throw sessionError;
+      }
+
+      if (!currentSession) {
+        setCashSessionId(null);
+
+        alert(
+          "A caixa está fechada. Abre uma caixa antes de efetuar vendas."
+        );
+
+        return;
+      }
+
+      const currentCashSessionId = Number(
+        currentSession.id
+      );
+
       const { data: sale, error: saleError } =
         await supabase
           .from("sales")
@@ -230,6 +534,8 @@ export default function Vendas() {
             amount_received: received,
             change_amount: change,
             payment_method: "cash",
+            cash_session_id:
+              currentCashSessionId,
           })
           .select("id")
           .single();
@@ -253,23 +559,26 @@ export default function Vendas() {
         subtotal: item.price * item.quantity,
       }));
 
-      const { error: itemsError } = await supabase
-        .from("sale_items")
-        .insert(saleItems);
+      const { error: itemsError } =
+        await supabase
+          .from("sale_items")
+          .insert(saleItems);
 
       if (itemsError) {
         throw itemsError;
       }
 
       for (const item of cart) {
-        const newStock = item.stock - item.quantity;
+        const newStock =
+          item.stock - item.quantity;
 
-        const { error: stockError } = await supabase
-          .from("products")
-          .update({
-            stock: newStock,
-          })
-          .eq("id", item.id);
+        const { error: stockError } =
+          await supabase
+            .from("products")
+            .update({
+              stock: newStock,
+            })
+            .eq("id", item.id);
 
         if (stockError) {
           throw stockError;
@@ -278,6 +587,7 @@ export default function Vendas() {
 
       setCart([]);
       setAmountReceived("");
+      setCashSessionId(currentCashSessionId);
 
       await loadProducts();
 
@@ -304,17 +614,150 @@ export default function Vendas() {
     <main className="flex min-h-screen bg-slate-950">
       <Sidebar />
 
-      <section className="flex-1 p-10 text-white">
-        <h1 className="mb-8 text-4xl font-bold text-orange-500">
-          Nova Venda
-        </h1>
+      <section className="flex-1 p-6 text-white md:p-10">
+        <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h1 className="text-4xl font-bold text-orange-500">
+              Nova Venda
+            </h1>
 
-        <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
-          {/* Produtos */}
+            <p className="mt-2 text-gray-400">
+              Seleciona os produtos e finaliza a
+              venda.
+            </p>
+          </div>
+
+          {!isLoadingCash && isCashOpen && (
+            <div className="rounded-xl border border-green-800 bg-green-950 px-5 py-3">
+              <p className="font-bold text-green-400">
+                🟢 Caixa aberta
+              </p>
+
+              <p className="text-sm text-green-300">
+                Turno #{cashSessionId}
+              </p>
+            </div>
+          )}
+        </div>
+
+        {isLoadingCash ? (
+          <div className="mb-8 rounded-2xl bg-slate-900 p-6">
+            <p className="text-gray-400">
+              A verificar o estado da caixa...
+            </p>
+          </div>
+        ) : cashError ? (
+          <div className="mb-8 rounded-2xl border border-red-800 bg-red-950 p-6">
+            <p className="font-bold text-red-300">
+              Não foi possível verificar a caixa
+            </p>
+
+            <p className="mt-1 text-red-400">
+              {cashError}
+            </p>
+
+            <button
+              type="button"
+              onClick={() =>
+                void loadCashSession()
+              }
+              className="mt-4 rounded-xl bg-red-700 px-5 py-3 font-bold hover:bg-red-600"
+            >
+              Tentar novamente
+            </button>
+          </div>
+        ) : !isCashOpen ? (
+          <div className="mb-8 rounded-2xl border border-yellow-700 bg-yellow-950 p-6">
+            <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-xl font-bold text-yellow-300">
+                  🔒 A caixa está fechada
+                </p>
+
+                <p className="mt-2 text-yellow-200">
+                  Tens de abrir uma caixa antes de
+                  efetuar vendas.
+                </p>
+              </div>
+
+              <Link
+                href="/caixa"
+                className="rounded-xl bg-orange-500 px-6 py-4 text-center text-lg font-bold transition hover:bg-orange-600"
+              >
+                Abrir Caixa
+              </Link>
+            </div>
+          </div>
+        ) : null}
+
+        <div className="grid grid-cols-1 gap-8 xl:grid-cols-[1.15fr_0.85fr]">
           <div className="rounded-2xl bg-slate-900 p-6">
-            <h2 className="mb-6 text-2xl font-bold">
-              Produtos
-            </h2>
+            <div className="mb-6">
+              <h2 className="text-2xl font-bold">
+                Produtos
+              </h2>
+
+              <p className="mt-1 text-sm text-gray-400">
+                Escolhe uma categoria para filtrar
+                os produtos.
+              </p>
+            </div>
+
+            {!isLoadingProducts &&
+              !productsError &&
+              products.length > 0 && (
+                <div className="mb-6 flex flex-wrap gap-3">
+                  {categories.map((category) => {
+                    const isSelected =
+                      selectedCategory === category;
+
+                    const numberOfProducts =
+                      category === "Todos"
+                        ? products.length
+                        : products.filter(
+                            (product) =>
+                              (product.category?.trim() ||
+                                "Sem categoria") ===
+                              category
+                          ).length;
+
+                    return (
+                      <button
+                        key={category}
+                        type="button"
+                        onClick={() =>
+                          setSelectedCategory(
+                            category
+                          )
+                        }
+                        className={`min-h-14 rounded-xl border px-5 py-3 text-base font-bold transition active:scale-95 ${
+                          isSelected
+                            ? "border-orange-400 bg-orange-500 text-white"
+                            : "border-slate-700 bg-slate-800 text-gray-200 hover:border-orange-500 hover:bg-slate-700"
+                        }`}
+                      >
+                        <span className="mr-2">
+                          {getCategoryEmoji(
+                            category
+                          )}
+                        </span>
+
+                        {category}
+
+                        <span
+                          className={`ml-2 rounded-full px-2 py-1 text-xs ${
+                            isSelected
+                              ? "bg-orange-700"
+                              : "bg-slate-700"
+                          }`}
+                        >
+                          {numberOfProducts}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
 
             {isLoadingProducts ? (
               <p className="text-gray-400">
@@ -328,7 +771,9 @@ export default function Vendas() {
 
                 <button
                   type="button"
-                  onClick={() => void loadProducts()}
+                  onClick={() =>
+                    void loadProducts()
+                  }
                   className="mt-4 rounded-lg bg-orange-500 px-4 py-2 font-bold hover:bg-orange-600"
                 >
                   Tentar novamente
@@ -338,15 +783,23 @@ export default function Vendas() {
               <p className="text-gray-400">
                 Não existem produtos ativos.
               </p>
+            ) : filteredProducts.length === 0 ? (
+              <div className="rounded-xl bg-slate-800 p-6 text-center">
+                <p className="text-gray-400">
+                  Não existem produtos nesta
+                  categoria.
+                </p>
+              </div>
             ) : (
-              <div className="grid grid-cols-2 gap-4">
-                {products.map((product) => {
+              <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
+                {filteredProducts.map((product) => {
                   const quantityInCart =
                     getQuantityInCart(product.id);
 
                   const hasAvailableStock =
                     product.stock > 0 &&
-                    quantityInCart < product.stock;
+                    quantityInCart <
+                      product.stock;
 
                   return (
                     <button
@@ -357,19 +810,26 @@ export default function Vendas() {
                       }
                       disabled={
                         isSaving ||
+                        !isCashOpen ||
                         !hasAvailableStock
                       }
-                      className="rounded-xl bg-orange-500 p-6 text-xl font-bold transition hover:bg-orange-600 active:scale-95 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:opacity-60"
+                      className="relative min-h-44 rounded-xl bg-orange-500 p-5 text-lg font-bold transition hover:bg-orange-600 active:scale-95 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:opacity-60"
                     >
-                      <span className="block text-3xl">
+                      {quantityInCart > 0 && (
+                        <span className="absolute right-3 top-3 flex h-8 min-w-8 items-center justify-center rounded-full bg-green-600 px-2 text-sm text-white">
+                          {quantityInCart}
+                        </span>
+                      )}
+
+                      <span className="block text-4xl">
                         {getProductEmoji(product)}
                       </span>
 
-                      <span className="mt-2 block">
+                      <span className="mt-3 block">
                         {product.name}
                       </span>
 
-                      <span className="mt-1 block text-base">
+                      <span className="mt-2 block text-base">
                         {product.price.toFixed(2)} €
                       </span>
 
@@ -385,11 +845,31 @@ export default function Vendas() {
             )}
           </div>
 
-          {/* Carrinho */}
           <div className="rounded-2xl bg-slate-900 p-6">
-            <h2 className="mb-6 text-2xl font-bold">
-              Carrinho
-            </h2>
+            <div className="mb-6 flex items-center justify-between gap-4">
+              <div>
+                <h2 className="text-2xl font-bold">
+                  Carrinho
+                </h2>
+
+                <p className="mt-1 text-sm text-gray-400">
+                  {cart.length === 0
+                    ? "Nenhum produto selecionado"
+                    : `${totalItems} artigo(s)`}
+                </p>
+              </div>
+
+              {cart.length > 0 && (
+                <button
+                  type="button"
+                  onClick={clearCart}
+                  disabled={isSaving}
+                  className="rounded-lg bg-red-900 px-4 py-2 text-sm font-bold text-red-200 hover:bg-red-800 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Limpar
+                </button>
+              )}
+            </div>
 
             {cart.length === 0 ? (
               <p className="text-gray-400">
@@ -400,7 +880,7 @@ export default function Vendas() {
                 {cart.map((item) => (
                   <div
                     key={`cart-item-${item.id}`}
-                    className="flex items-center justify-between gap-4 rounded-lg bg-slate-800 p-4"
+                    className="flex flex-col gap-4 rounded-lg bg-slate-800 p-4 sm:flex-row sm:items-center sm:justify-between"
                   >
                     <div>
                       <p className="font-semibold">
@@ -409,22 +889,26 @@ export default function Vendas() {
                       </p>
 
                       <p className="text-sm text-gray-400">
-                        {item.price.toFixed(2)} € cada
+                        {item.price.toFixed(2)} €
+                        cada
                       </p>
 
                       <p className="text-xs text-gray-500">
-                        Stock disponível: {item.stock}
+                        Stock disponível:{" "}
+                        {item.stock}
                       </p>
                     </div>
 
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center justify-between gap-3 sm:justify-end">
                       <button
                         type="button"
                         onClick={() =>
                           decreaseQuantity(item.id)
                         }
-                        disabled={isSaving}
-                        className="h-10 w-10 rounded-lg bg-red-600 text-xl font-bold hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                        disabled={
+                          isSaving || !isCashOpen
+                        }
+                        className="h-12 w-12 rounded-lg bg-red-600 text-2xl font-bold hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         −
                       </button>
@@ -440,16 +924,18 @@ export default function Vendas() {
                         }
                         disabled={
                           isSaving ||
+                          !isCashOpen ||
                           item.quantity >= item.stock
                         }
-                        className="h-10 w-10 rounded-lg bg-green-600 text-xl font-bold hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"
+                        className="h-12 w-12 rounded-lg bg-green-600 text-2xl font-bold hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         +
                       </button>
 
                       <span className="min-w-24 text-right font-bold">
                         {(
-                          item.price * item.quantity
+                          item.price *
+                          item.quantity
                         ).toFixed(2)}{" "}
                         €
                       </span>
@@ -476,16 +962,60 @@ export default function Vendas() {
                 type="number"
                 min="0"
                 step="0.01"
+                inputMode="decimal"
                 value={amountReceived}
                 onChange={(event) =>
-                  setAmountReceived(event.target.value)
+                  setAmountReceived(
+                    event.target.value
+                  )
                 }
                 placeholder="0,00 €"
                 disabled={
-                  cart.length === 0 || isSaving
+                  cart.length === 0 ||
+                  isSaving ||
+                  !isCashOpen
                 }
                 className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-800 p-4 text-2xl font-bold text-white outline-none focus:border-orange-500 disabled:cursor-not-allowed disabled:bg-slate-700"
               />
+
+              <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                {[5, 10, 20, 50].map((amount) => (
+                  <button
+                    key={amount}
+                    type="button"
+                    onClick={() =>
+                      setAmountReceived(
+                        amount.toString()
+                      )
+                    }
+                    disabled={
+                      cart.length === 0 ||
+                      isSaving ||
+                      !isCashOpen
+                    }
+                    className="rounded-xl bg-slate-700 py-4 font-bold transition hover:bg-slate-600 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {amount} €
+                  </button>
+                ))}
+              </div>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setAmountReceived(
+                    total.toFixed(2)
+                  )
+                }
+                disabled={
+                  cart.length === 0 ||
+                  isSaving ||
+                  !isCashOpen
+                }
+                className="mt-3 w-full rounded-xl bg-slate-700 py-4 font-bold transition hover:bg-slate-600 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Valor exato
+              </button>
 
               <div className="mt-4 rounded-xl bg-slate-800 p-4">
                 <p className="text-lg text-gray-300">
@@ -515,13 +1045,16 @@ export default function Vendas() {
                 disabled={
                   cart.length === 0 ||
                   !hasEnoughMoney ||
-                  isSaving
+                  isSaving ||
+                  !isCashOpen
                 }
                 className="mt-6 w-full rounded-xl bg-green-600 py-5 text-xl font-bold transition hover:bg-green-700 disabled:cursor-not-allowed disabled:bg-gray-600"
               >
                 {isSaving
                   ? "A guardar venda..."
-                  : "Finalizar Venda"}
+                  : isCashOpen
+                    ? "Finalizar Venda"
+                    : "Caixa Fechada"}
               </button>
             </div>
           </div>

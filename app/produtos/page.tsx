@@ -29,6 +29,44 @@ const emptyForm: ProductForm = {
   active: true,
 };
 
+const categories = [
+  "Bebidas",
+  "Bar",
+  "Comida",
+  "Snacks",
+  "Sobremesas",
+  "Menu",
+  "Café",
+];
+
+function getCategoryLabel(category: string) {
+  switch (category) {
+    case "Bebidas":
+      return "🥤 Bebidas";
+
+    case "Bar":
+      return "🍹 Bar";
+
+    case "Comida":
+      return "🍔 Comida";
+
+    case "Snacks":
+      return "🍟 Snacks";
+
+    case "Sobremesas":
+      return "🍨 Sobremesas";
+
+    case "Menu":
+      return "📋 Menu";
+
+    case "Café":
+      return "☕ Café";
+
+    default:
+      return category;
+  }
+}
+
 export default function ProdutosPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [form, setForm] = useState<ProductForm>(emptyForm);
@@ -118,6 +156,11 @@ export default function ProdutosPage() {
       return;
     }
 
+    if (!category) {
+      alert("Seleciona uma categoria.");
+      return;
+    }
+
     if (!Number.isFinite(price) || price < 0) {
       alert("Indica um preço válido.");
       return;
@@ -135,7 +178,7 @@ export default function ProdutosPage() {
         name,
         price,
         stock,
-        category: category || null,
+        category,
         active: form.active,
       };
 
@@ -242,7 +285,7 @@ export default function ProdutosPage() {
     <main className="flex min-h-screen bg-slate-950">
       <Sidebar />
 
-      <section className="flex-1 p-10 text-white">
+      <section className="flex-1 p-4 text-white md:p-10">
         <h1 className="mb-8 text-4xl font-bold text-orange-500">
           Produtos
         </h1>
@@ -279,15 +322,23 @@ export default function ProdutosPage() {
                 Categoria
               </label>
 
-              <input
-                type="text"
+              <select
                 value={form.category}
                 onChange={(event) =>
                   handleChange("category", event.target.value)
                 }
                 className="w-full rounded-xl border border-slate-700 bg-slate-800 p-3 outline-none focus:border-orange-500"
-                placeholder="Ex.: Bebidas"
-              />
+              >
+                <option value="">
+                  Selecionar categoria
+                </option>
+
+                {categories.map((category) => (
+                  <option key={category} value={category}>
+                    {getCategoryLabel(category)}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <div>
@@ -340,7 +391,7 @@ export default function ProdutosPage() {
             <span>Produto ativo</span>
           </label>
 
-          <div className="mt-6 flex gap-3">
+          <div className="mt-6 flex flex-wrap gap-3">
             <button
               type="submit"
               disabled={isSaving}
@@ -358,7 +409,7 @@ export default function ProdutosPage() {
                 type="button"
                 onClick={cancelEditing}
                 disabled={isSaving}
-                className="rounded-xl bg-slate-700 px-6 py-3 font-bold hover:bg-slate-600"
+                className="rounded-xl bg-slate-700 px-6 py-3 font-bold hover:bg-slate-600 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Cancelar
               </button>
@@ -378,8 +429,8 @@ export default function ProdutosPage() {
               onChange={(event) =>
                 setSearch(event.target.value)
               }
-              placeholder="Pesquisar produto..."
-              className="rounded-xl border border-slate-700 bg-slate-800 px-4 py-3 outline-none focus:border-orange-500"
+              placeholder="Pesquisar produto ou categoria..."
+              className="w-full rounded-xl border border-slate-700 bg-slate-800 px-4 py-3 outline-none focus:border-orange-500 md:w-auto"
             />
           </div>
 
@@ -407,7 +458,7 @@ export default function ProdutosPage() {
             </p>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full">
+              <table className="w-full min-w-[850px]">
                 <thead>
                   <tr className="border-b border-slate-700 text-left text-gray-400">
                     <th className="p-3">Produto</th>
@@ -431,8 +482,16 @@ export default function ProdutosPage() {
                         {product.name}
                       </td>
 
-                      <td className="p-3 text-gray-300">
-                        {product.category || "Sem categoria"}
+                      <td className="p-3">
+                        {product.category ? (
+                          <span className="rounded-full bg-slate-800 px-3 py-1 text-sm font-semibold text-gray-200">
+                            {getCategoryLabel(product.category)}
+                          </span>
+                        ) : (
+                          <span className="text-gray-500">
+                            Sem categoria
+                          </span>
+                        )}
                       </td>
 
                       <td className="p-3">
